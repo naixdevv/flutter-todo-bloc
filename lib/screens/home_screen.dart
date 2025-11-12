@@ -1,114 +1,53 @@
 import 'package:flutter/material.dart';
-import '../models/task.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../blocs/todo_bloc.dart';
+import '../blocs/todo_event.dart';
+import '../blocs/todo_state.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  final List<Task> _tasks = [];
-
-  final TextEditingController _controller = TextEditingController();
-
-  void _addTask(String title) {
-    setState(() {
-      _tasks.add(Task(title: title));
-    });
-    _controller.clear();
-  }
-
-  void _toggleTask(int index) {
-    setState(() {
-      _tasks[index].toggleDone();
-    });
-  }
-
-  void _deleteTask(int index) {
-    setState(() {
-      _tasks.removeAt(index);
-    });
-  }
-
-  void _clearAll() {
-    setState(() {
-      _tasks.clear();
-    });
-  }
-
-  void _editTask(int index) {
-    final TextEditingController editController = TextEditingController(
-      text: _tasks[index].title,
-    );
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit Task'),
-        content: TextField(
-          controller: editController,
-          decoration: const InputDecoration(
-            labelText: 'New my task',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _tasks[index] = Task(
-                  title: editController.text,
-                  isDone: _tasks[index].isDone,
-                );
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final controller = TextEditingController();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Flutter To-Do List'),
+        title: const Text('Flutter To-Do List (BloC)'),
         actions: [
-          if (_tasks.isNotEmpty)
-            IconButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Confirm to delete all'),
-                    content: const Text('Are you sure delete all?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
+          BlocBuilder<TodoBloc, TodoState>(
+            builder: (context, state) {
+              return Visibility(
+                visible: state.tasks.isNotEmpty,
+                child: IconButton(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Confirm to delete all'),
+                        content: const Text('Are you sure delete all?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              context.read<TodoBloc>().add(ClearAllTasks());
+                              Navigator.pop(context);
+                            },
+                            child: const Text('Delete All'),
+                          ),
+                        ],
                       ),
-                      ElevatedButton(
-                        onPressed: () {
-                          _clearAll();
-                          Navigator.pop(context);
-                        },
-                        child: const Text('Delete All'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              icon: const Icon(Icons.delete_forever),
-              tooltip: 'Delete All',
-            ),
+                    );
+                  },
+                  icon: const Icon(Icons.delete_forever),
+                  tooltip: 'Delete All',
+                ),
+              );
+            },
+          ),
         ],
       ),
       body: Column(
@@ -119,14 +58,15 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _controller,
+                    controller: controller,
                     decoration: const InputDecoration(
                       labelText: "My task",
                       border: OutlineInputBorder(),
                     ),
                     onSubmitted: (value) {
                       if (value.isNotEmpty) {
-                        _addTask(value);
+                        context.read<TodoBloc>().add(AddTask(value));
+                        controller.clear();
                       }
                     },
                   ),
@@ -134,8 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () {
-                    if (_controller.text.isNotEmpty) {
-                      _addTask(_controller.text);
+                    if (controller.text.isNotEmpty) {
+                      context.read<TodoBloc>().add(AddTask(controller.text));
+                      controller.clear();
                     }
                   },
                   child: Text('Add'),
@@ -144,47 +85,93 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Expanded(
-            child: _tasks.isEmpty
-                ? const Center(
+            child: BlocBuilder<TodoBloc, TodoState>(
+              builder: (context, state) {
+                if (state.tasks.isEmpty) {
+                  return const Center(
                     child: Text(
                       'Task Empty.',
                       style: TextStyle(color: Colors.grey),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: _tasks.length,
-                    itemBuilder: (context, index) {
-                      final task = _tasks[index];
+                  );
+                }
 
-                      return ListTile(
-                        leading: Checkbox(
-                          value: task.isDone,
-                          onChanged: (_) => _toggleTask(index),
+                return ListView.builder(
+                  itemCount: state.tasks.length,
+                  itemBuilder: (context, index) {
+                    final task = state.tasks[index];
+
+                    return ListTile(
+                      leading: Checkbox(
+                        value: task.isDone,
+                        onChanged: (_) =>
+                            context.read<TodoBloc>().add(ToggleTask(task.id)),
+                      ),
+                      title: Text(
+                        task.title,
+                        style: TextStyle(
+                          decoration: task.isDone
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
                         ),
-                        title: Text(
-                          task.title,
-                          style: TextStyle(
-                            decoration: task.isDone
-                                ? TextDecoration.lineThrough
-                                : TextDecoration.none,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              final TextEditingController editController =
+                                  TextEditingController(
+                                    text: state.tasks[index].title,
+                                  );
+
+                              showDialog(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('Edit Task'),
+                                  content: TextField(
+                                    controller: editController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'New my task',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      child: const Text('Cancel'),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        context.read<TodoBloc>().add(
+                                          EditTask(
+                                            id: task.id,
+                                            newTitle: editController.text,
+                                          ),
+                                        );
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text('Save'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.edit, color: Colors.blue),
                           ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              onPressed: () => _editTask(index),
-                              icon: const Icon(Icons.edit, color: Colors.blue),
+                          IconButton(
+                            onPressed: () => context.read<TodoBloc>().add(
+                              DeleteTask(task.id),
                             ),
-                            IconButton(
-                              onPressed: () => _deleteTask(index),
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
